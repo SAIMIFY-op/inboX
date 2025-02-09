@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { Send, Smile } from 'lucide-react';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
-import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = "https://oyuzkivdsnfvwozgskoy.supabase.co";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95dXpraXZkc25mdndvemdza295Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzkxMTMyMjIsImV4cCI6MjA1NDY4OTIyMn0.iV4wkWFAHrxO91nKAMWAg9U57HJ6cw2A60EnHWbVj0g";
@@ -21,30 +21,6 @@ function App() {
   const [isJoined, setIsJoined] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  useEffect(() => {
-    if (isJoined) {
-      fetchMessages();
-      const subscription = supabase
-        .channel("messages")
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
-        .subscribe();
-      return () => {
-        supabase.removeChannel(subscription);
-      };
-    }
-  }, [isJoined]);
-
-  const fetchMessages = async () => {
-    const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("roomId", roomId)
-      .order("timestamp", { ascending: true });
-    if (!error) {
-      setMessages(data || []);
-    }
-  };
-
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (userId && roomId && roomId.length === 6) {
@@ -60,14 +36,17 @@ function App() {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (inputText.trim()) {
-      const newMessage = {
+      const newMessage: Message = {
+        id: Date.now().toString(),
         text: inputText,
-        timestamp: new Date().toISOString(),
-        roomId,
-        userId
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
-      await supabase.from("messages").insert([newMessage]);
+      
+      setMessages([...messages, newMessage]);
       setInputText('');
+      
+      // Store message in Supabase
+      await supabase.from('messages').insert([{ text: newMessage.text, timestamp: newMessage.timestamp }]);
     }
   };
 
@@ -126,31 +105,19 @@ function App() {
         <h1 className="text-white font-semibold text-lg sm:text-xl">InboX - {roomId}</h1>
         <span className="text-gray-400 text-sm">{userId}</span>
       </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-800">
         {messages.map((message) => (
           <div key={message.id} className="flex justify-end">
             <div className="bg-[#0095ff] text-white rounded-lg px-4 py-2 max-w-[85%] sm:max-w-[70%] break-words">
               <p className="text-sm sm:text-base">{message.text}</p>
-              <p className="text-xs text-blue-100 mt-1">{new Date(message.timestamp).toLocaleTimeString()}</p>
+              <p className="text-xs text-blue-100 mt-1">{message.timestamp}</p>
             </div>
           </div>
         ))}
       </div>
-      <form onSubmit={handleSend} className="p-3 sm:p-4 bg-[#111] border-t border-gray-800 relative">
-        <div className="flex items-center gap-2 max-w-5xl mx-auto">
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder="Type message here"
-            className="flex-1 bg-[#222] text-white placeholder-gray-500 focus:outline-none p-2 sm:p-3 rounded-lg text-sm sm:text-base"
-          />
-          <button type="submit" className="text-[#0095ff] hover:text-[#0077cc] transition-colors disabled:opacity-50 p-2" disabled={!inputText.trim()}>
-            <Send className="w-6 h-6 sm:w-7 sm:h-7" />
-          </button>
-        </div>
-      </form>
     </div>
   );
 }
+
 export default App;
