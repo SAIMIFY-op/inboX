@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Send, Smile } from 'lucide-react';
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = "https://oyuzkivdsnfvwozgskoy.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im95dXpraXZkc25mdndvemdza295Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzkxMTMyMjIsImV4cCI6MjA1NDY4OTIyMn0.iV4wkWFAHrxO91nKAMWAg9U57HJ6cw2A60EnHWbVj0g";
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 interface Message {
   id: string;
@@ -16,6 +21,30 @@ function App() {
   const [isJoined, setIsJoined] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
+  useEffect(() => {
+    if (isJoined) {
+      fetchMessages();
+      const subscription = supabase
+        .channel("messages")
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, fetchMessages)
+        .subscribe();
+      return () => {
+        supabase.removeChannel(subscription);
+      };
+    }
+  }, [isJoined]);
+
+  const fetchMessages = async () => {
+    const { data, error } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("roomId", roomId)
+      .order("timestamp", { ascending: true });
+    if (!error) {
+      setMessages(data || []);
+    }
+  };
+
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (userId && roomId && roomId.length === 6) {
@@ -28,15 +57,16 @@ function App() {
     setRoomId(value);
   };
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (inputText.trim()) {
-      const newMessage: Message = {
-        id: Date.now().toString(),
+      const newMessage = {
         text: inputText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toISOString(),
+        roomId,
+        userId
       };
-      setMessages([...messages, newMessage]);
+      await supabase.from("messages").insert([newMessage]);
       setInputText('');
     }
   };
@@ -96,40 +126,18 @@ function App() {
         <h1 className="text-white font-semibold text-lg sm:text-xl">InboX - {roomId}</h1>
         <span className="text-gray-400 text-sm">{userId}</span>
       </div>
-      
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-800">
         {messages.map((message) => (
           <div key={message.id} className="flex justify-end">
             <div className="bg-[#0095ff] text-white rounded-lg px-4 py-2 max-w-[85%] sm:max-w-[70%] break-words">
               <p className="text-sm sm:text-base">{message.text}</p>
-              <p className="text-xs text-blue-100 mt-1">{message.timestamp}</p>
+              <p className="text-xs text-blue-100 mt-1">{new Date(message.timestamp).toLocaleTimeString()}</p>
             </div>
           </div>
         ))}
       </div>
-
       <form onSubmit={handleSend} className="p-3 sm:p-4 bg-[#111] border-t border-gray-800 relative">
         <div className="flex items-center gap-2 max-w-5xl mx-auto">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-              className="text-gray-400 hover:text-gray-300 transition-colors p-2"
-            >
-              <Smile className="w-6 h-6 sm:w-7 sm:h-7" />
-            </button>
-            {showEmojiPicker && (
-              <div className="absolute bottom-full left-0 mb-2">
-                <EmojiPicker
-                  onEmojiClick={onEmojiClick}
-                  autoFocusSearch={false}
-                  theme="dark"
-                  height={350}
-                  width={300}
-                />
-              </div>
-            )}
-          </div>
           <input
             type="text"
             value={inputText}
@@ -137,11 +145,7 @@ function App() {
             placeholder="Type message here"
             className="flex-1 bg-[#222] text-white placeholder-gray-500 focus:outline-none p-2 sm:p-3 rounded-lg text-sm sm:text-base"
           />
-          <button
-            type="submit"
-            className="text-[#0095ff] hover:text-[#0077cc] transition-colors disabled:opacity-50 p-2"
-            disabled={!inputText.trim()}
-          >
+          <button type="submit" className="text-[#0095ff] hover:text-[#0077cc] transition-colors disabled:opacity-50 p-2" disabled={!inputText.trim()}>
             <Send className="w-6 h-6 sm:w-7 sm:h-7" />
           </button>
         </div>
@@ -149,5 +153,4 @@ function App() {
     </div>
   );
 }
-
 export default App;
